@@ -3,18 +3,28 @@ import {connect} from 'react-redux';
 import {bindActionCreators} from 'redux';
 import * as courseActions from '../../actions/courseActions';
 import CourseForm from './CourseForm';
+import toastr from 'toastr';
 
-class ManageCoursePage extends React.Component {
+
+export class ManageCoursePage extends React.Component {
     constructor(props, context) {
         super(props, context);
-
+        // Local state to the component only
         this.state = {
-          course: Object.assign({}, this.props.course),
-          errors: {}
+            course: Object.assign({}, this.props.course),
+            errors: {},
+            saving: false
         };
 
         this.updateCourseState = this.updateCourseState.bind(this);
         this.saveCourse = this.saveCourse.bind(this);
+    }
+
+    componentWillReceiveProps(nextProps) {
+        if(this.props.course.id !== nextProps.course.id) {
+            // Necessary to populate form when existing course is loaded directly.
+            this.setState({course: Object.assign({}, nextProps.course)});
+        }
     }
 
     updateCourseState(event) {
@@ -24,9 +34,41 @@ class ManageCoursePage extends React.Component {
         return this.setState({course: course});
     }
 
+    courseFormIsValid() {
+        let formIsValid = true;
+        let errors = {};
+
+        if(this.state.course.title.length < 5)
+        {
+            errors.title = 'Title must be at least 5 characters.';
+            formIsValid = false;
+        }
+
+        this.setState( {errors: errors} );
+        return formIsValid;
+    }
+
     saveCourse(event) {
         event.preventDefault();
-        this.props.actions.saveCourse(this.state.course);
+
+        if(!this.courseFormIsValid()) {
+            return;
+        }
+
+        this.setState({saving: true});
+        this.props.actions.saveCourse(this.state.course)
+            .then(() => this.redirect())
+            .catch(error => {
+                toastr.error(error);
+                this.setState({saving: false});
+            });
+
+    }
+
+    redirect() {
+        this.setState({saving: false});
+        toastr.success('Course saved');
+        this.context.router.push('/courses');
     }
 
     render() {
@@ -37,6 +79,7 @@ class ManageCoursePage extends React.Component {
                 onSave={this.saveCourse}
                 course={this.state.course}
                 errors={this.state.errors}
+                saving={this.state.saving}
             />
         );
     }
@@ -48,8 +91,25 @@ ManageCoursePage.propTypes = {
     actions: PropTypes.object.isRequired
 };
 
+// Pull in the React Router context so router is available on this.context.router
+ManageCoursePage.contextTypes = {
+    router: PropTypes.object
+};
+
+function getCourseById(courses, id) {
+    const course = courses.filter(course => course.id == id);
+    if(course.length) return course[0]; // Since filter returns an array, have to grab the first record.
+    return null;
+}
+
 function mapStateToProps(state, ownProps) {
+    const courseId = ownProps.params.id; // from the path `/course/:id`
+
     let course = {id: '', watchHref: '', title: '', authorId: '', length: '', category: ''};
+
+    if(courseId && state.courses.length > 0) {
+        course = getCourseById(state.courses, courseId);
+    }
 
     const authorsFormattedForDropdown = state.authors.map(author => {
        return {
